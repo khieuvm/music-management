@@ -1,0 +1,479 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CourseCategory {
+  TALENT
+  SKILL
+}
+
+enum PublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DeliveryMode {
+  OFFLINE
+  ONLINE
+}
+
+enum ClassFormat {
+  GROUP
+  INDIVIDUAL
+}
+
+enum ConsultationStatus {
+  NEW
+  CONTACTING
+  ENROLLED
+  CLOSED
+}
+
+model Course {
+  id            String                @id @default(uuid()) @db.Uuid
+  slug          String                @unique @db.VarChar(100)
+  title         String                @db.VarChar(150)
+  summary       String                @db.VarChar(300)
+  description   String                @db.Text
+  audience      String                @db.VarChar(300)
+  category      CourseCategory        @default(TALENT)
+  subject       String                @db.VarChar(50)
+  status        PublicationStatus     @default(DRAFT)
+  createdAt     DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
+  offerings     CourseOffering[]
+  consultations ConsultationRequest[]
+  classes       ClassGroup[]
+
+  @@index([status, createdAt])
+}
+
+model CourseOffering {
+  id              String       @id @default(uuid()) @db.Uuid
+  courseId        String       @db.Uuid
+  deliveryMode    DeliveryMode
+  format          ClassFormat
+  referenceFeeVnd Int?
+  course          Course       @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@unique([courseId, deliveryMode, format])
+}
+
+model ConsultationRequest {
+  id             String             @id @default(uuid()) @db.Uuid
+  contactName    String             @db.VarChar(100)
+  phone          String             @db.VarChar(20)
+  courseId       String?            @db.Uuid
+  note           String             @default("") @db.VarChar(1000)
+  status         ConsultationStatus @default(NEW)
+  staffNote      String             @default("") @db.VarChar(1000)
+  privacyVersion String             @db.VarChar(30)
+  consentedAt    DateTime           @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  course         Course?            @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+}
+
+model RateLimitBucket {
+  key       String   @id @db.VarChar(100)
+  count     Int
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@index([expiresAt])
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  TEACHER
+  STUDENT
+}
+
+enum StudentStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+enum TeacherStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ClassStatus {
+  PLANNED
+  ACTIVE
+  FINISHED
+  CANCELLED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  WITHDRAWN
+  COMPLETED
+}
+
+enum LessonStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  EXCUSED
+  ABSENT
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  NEEDS_REVISION
+  REVIEWED
+}
+
+enum AbsenceStatus {
+  PENDING
+  ACKNOWLEDGED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+}
+
+model User {
+  id                 String       @id @default(uuid()) @db.Uuid
+  username           String       @unique @db.VarChar(50)
+  passwordHash       String       @db.VarChar(255)
+  role               Role
+  displayName        String       @db.VarChar(100)
+  isActive           Boolean      @default(true)
+  mustChangePassword Boolean      @default(true)
+  lastLoginAt        DateTime?    @db.Timestamptz(3)
+  createdAt          DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz(3)
+  sessions           Session[]
+  student            Student?
+  teacher            Teacher?
+  files              StoredFile[]
+  receivedPayments   Payment[]    @relation("PaymentReceiver")
+  voidedPayments     Payment[]    @relation("PaymentVoider")
+  auditLogs          AuditLog[]
+  studentNotes       StudentNote[]
+  notifications      Notification[]
+  payRates           PayRate[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique @db.Char(64)
+  userId    String   @db.Uuid
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Student {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique @db.VarChar(20)
+  fullName    String        @db.VarChar(100)
+  dateOfBirth DateTime?     @db.Date
+  parentName  String        @default("") @db.VarChar(100)
+  parentPhone String        @default("") @db.VarChar(20)
+  parentEmail String        @default("") @db.VarChar(254)
+  status      StudentStatus @default(ACTIVE)
+  note        String        @default("") @db.VarChar(1000)
+  userId      String?       @unique @db.Uuid
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  enrollments Enrollment[]
+  attendance  Attendance[]
+  submissions Submission[]
+  absences    AbsenceRequest[]
+  notes       StudentNote[]
+
+  @@index([fullName])
+}
+
+model Teacher {
+  id        String        @id @default(uuid()) @db.Uuid
+  fullName  String        @db.VarChar(100)
+  phone     String        @default("") @db.VarChar(20)
+  email     String        @default("") @db.VarChar(254)
+  subjects  String        @default("") @db.VarChar(200)
+  status    TeacherStatus @default(ACTIVE)
+  note      String        @default("") @db.VarChar(1000)
+  userId    String?       @unique @db.Uuid
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+  user      User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  classes   ClassGroup[]
+  lessons   Lesson[]
+  payRates  PayRate[]
+}
+
+model ClassGroup {
+  id           String       @id @default(uuid()) @db.Uuid
+  code         String       @unique @db.VarChar(30)
+  name         String       @db.VarChar(150)
+  courseId     String       @db.Uuid
+  teacherId    String       @db.Uuid
+  deliveryMode DeliveryMode
+  format       ClassFormat
+  capacity     Int
+  tuitionVnd   Int
+  location     String       @default("") @db.VarChar(200)
+  meetingUrl   String       @default("") @db.VarChar(500)
+  startDate    DateTime     @db.Date
+  endDate      DateTime?    @db.Date
+  status       ClassStatus  @default(PLANNED)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+  course       Course       @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  enrollments  Enrollment[]
+  lessons      Lesson[]
+  assignments  Assignment[]
+  studentNotes StudentNote[]
+
+  @@index([status, startDate])
+  @@index([teacherId])
+}
+
+model Enrollment {
+  id           String           @id @default(uuid()) @db.Uuid
+  studentId    String           @db.Uuid
+  classId      String           @db.Uuid
+  status       EnrollmentStatus @default(ACTIVE)
+  tuitionVnd   Int
+  enrolledAt   DateTime         @default(now()) @db.Timestamptz(3)
+  withdrawnAt  DateTime?        @db.Timestamptz(3)
+  note         String           @default("") @db.VarChar(500)
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  classGroup   ClassGroup       @relation(fields: [classId], references: [id], onDelete: Restrict)
+  installments FeeInstallment[]
+  payments     Payment[]
+
+  @@unique([studentId, classId])
+  @@index([classId, status])
+}
+
+model FeeInstallment {
+  id           String     @id @default(uuid()) @db.Uuid
+  enrollmentId String     @db.Uuid
+  sequence     Int
+  dueDate      DateTime   @db.Date
+  amountVnd    Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, sequence])
+}
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  receiptNo      Int           @unique @default(autoincrement())
+  enrollmentId   String        @db.Uuid
+  amountVnd      Int
+  method         PaymentMethod
+  paidAt         DateTime      @db.Timestamptz(3)
+  note           String        @default("") @db.VarChar(500)
+  idempotencyKey String        @unique @db.Uuid
+  receivedById   String        @db.Uuid
+  voidedAt       DateTime?     @db.Timestamptz(3)
+  voidedById     String?       @db.Uuid
+  voidReason     String        @default("") @db.VarChar(500)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  enrollment     Enrollment    @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  receivedBy     User          @relation("PaymentReceiver", fields: [receivedById], references: [id], onDelete: Restrict)
+  voidedBy       User?         @relation("PaymentVoider", fields: [voidedById], references: [id], onDelete: Restrict)
+
+  @@index([enrollmentId])
+  @@index([paidAt])
+}
+
+model Lesson {
+  id           String       @id @default(uuid()) @db.Uuid
+  classId      String       @db.Uuid
+  teacherId    String       @db.Uuid
+  startsAt     DateTime     @db.Timestamptz(3)
+  endsAt       DateTime     @db.Timestamptz(3)
+  status       LessonStatus @default(SCHEDULED)
+  topic        String       @default("") @db.VarChar(300)
+  teacherNote  String       @default("") @db.VarChar(1000)
+  cancelReason String       @default("") @db.VarChar(300)
+  completedAt  DateTime?    @db.Timestamptz(3)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+  classGroup   ClassGroup   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+  attendance   Attendance[]
+  absences     AbsenceRequest[]
+
+  @@index([classId, startsAt])
+  @@index([teacherId, startsAt])
+  @@index([startsAt])
+}
+
+model Attendance {
+  id          String           @id @default(uuid()) @db.Uuid
+  lessonId    String           @db.Uuid
+  studentId   String           @db.Uuid
+  status      AttendanceStatus
+  comment     String           @default("") @db.VarChar(1000)
+  updatedById String           @db.Uuid
+  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+  lesson      Lesson           @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  student     Student          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([lessonId, studentId])
+  @@index([studentId])
+}
+
+model Assignment {
+  id           String       @id @default(uuid()) @db.Uuid
+  classId      String       @db.Uuid
+  title        String       @db.VarChar(200)
+  instructions String       @default("") @db.Text
+  dueAt        DateTime?    @db.Timestamptz(3)
+  requireVideo Boolean      @default(true)
+  createdById  String       @db.Uuid
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+  classGroup   ClassGroup   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  submissions  Submission[]
+
+  @@index([classId, createdAt])
+}
+
+model Submission {
+  id           String           @id @default(uuid()) @db.Uuid
+  assignmentId String           @db.Uuid
+  studentId    String           @db.Uuid
+  attempt      Int
+  textAnswer   String           @default("") @db.VarChar(2000)
+  videoFileId  String?          @unique @db.Uuid
+  status       SubmissionStatus @default(SUBMITTED)
+  score        Int?
+  feedback     String           @default("") @db.VarChar(2000)
+  submittedAt  DateTime         @default(now()) @db.Timestamptz(3)
+  reviewedAt   DateTime?        @db.Timestamptz(3)
+  reviewedById String?          @db.Uuid
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  videoFile    StoredFile?      @relation(fields: [videoFileId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, studentId, attempt])
+  @@index([assignmentId, status])
+}
+
+model StoredFile {
+  id           String      @id @default(uuid()) @db.Uuid
+  ownerId      String      @db.Uuid
+  storageKey   String      @unique @db.VarChar(100)
+  originalName String      @db.VarChar(255)
+  mimeType     String      @db.VarChar(100)
+  sizeBytes    BigInt
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  owner        User        @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  submission   Submission?
+
+  @@index([ownerId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String   @db.VarChar(60)
+  entityType String   @db.VarChar(40)
+  entityId   String   @db.VarChar(64)
+  detail     Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+/// A student's (or parent's) notice that they will miss an upcoming lesson.
+model AbsenceRequest {
+  id               String        @id @default(uuid()) @db.Uuid
+  lessonId         String        @db.Uuid
+  studentId        String        @db.Uuid
+  reason           String        @db.VarChar(500)
+  status           AbsenceStatus @default(PENDING)
+  createdById      String        @db.Uuid
+  acknowledgedAt   DateTime?     @db.Timestamptz(3)
+  acknowledgedById String?       @db.Uuid
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+  lesson           Lesson        @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  student          Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([lessonId, studentId])
+  @@index([studentId, createdAt])
+}
+
+/// Periodic progress comment from a teacher about one student in one class.
+model StudentNote {
+  id         String     @id @default(uuid()) @db.Uuid
+  classId    String     @db.Uuid
+  studentId  String     @db.Uuid
+  authorId   String     @db.Uuid
+  content    String     @db.VarChar(2000)
+  shared     Boolean    @default(true)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime   @updatedAt @db.Timestamptz(3)
+  classGroup ClassGroup @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([classId, studentId, createdAt])
+  @@index([studentId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String    @db.VarChar(200)
+  body      String    @default("") @db.VarChar(500)
+  href      String    @default("") @db.VarChar(300)
+  readAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Versioned pay rates. teacherId = null is the centre-wide default; a teacher-specific rate wins over it.
+/// The rate used for a lesson is the latest one whose effectiveFrom is on or before the lesson's local date.
+model PayRate {
+  id                  String   @id @default(uuid()) @db.Uuid
+  teacherId           String?  @db.Uuid
+  effectiveFrom       DateTime @db.Date
+  hourlyVnd           Int
+  eveningExtraVnd     Int      @default(0)
+  weekendExtraVnd     Int      @default(0)
+  perLessonVnd        Int      @default(0)
+  eveningStartMinutes Int      @default(1080)
+  note                String   @default("") @db.VarChar(300)
+  createdById         String   @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  teacher             Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  createdBy           User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([teacherId, effectiveFrom])
+}
