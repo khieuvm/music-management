@@ -105,6 +105,8 @@ npm run test:e2e
 
 File [render.yaml](render.yaml) dựng sẵn 1 web service + 1 PostgreSQL miễn phí (vùng Singapore):
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/khieuvm/music-management)
+
 1. Đăng nhập [render.com](https://render.com) bằng GitHub, cho phép truy cập repo này.
 2. **New → Blueprint**, chọn repo, bấm **Apply**. Render tự build (`npm ci && npm run build`), mỗi lần khởi động chạy migration + seed dữ liệu demo (`npm run start:demo`).
 3. Mở link `https://<tên-service>.onrender.com`. Trang đăng nhập hiện danh sách tài khoản demo (mật khẩu `demo12345`).
