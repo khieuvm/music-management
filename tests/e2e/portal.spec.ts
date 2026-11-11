@@ -276,3 +276,27 @@ test("student asks for leave, teacher is notified and writes a progress note", a
   await login(page, names.student);
   await expect(page.locator(".note-list")).toContainText("Tháng này tiến bộ nhiều");
 });
+
+test("staff tracks fees by due colour and class progress", async ({ page }) => {
+  await login(page, "giaovu", "demo12345");
+  await expect(page.getByRole("heading", { name: "Học phí cần thu" })).toBeVisible();
+  await page.goto("/quan-tri/hoc-phi?loc=tat-ca");
+  await expect(page.getByRole("heading", { name: "Công nợ học phí" })).toBeVisible();
+  await expect(page.locator(".stat.tone-bad")).toContainText("Quá hạn");
+  await noHorizontalScroll(page);
+
+  await page.goto("/quan-tri/lop?trang_thai=tat-ca");
+  const row = page.getByRole("row").filter({ hasText: `E2E-${suffix}`.toUpperCase() });
+  await expect(row.getByRole("progressbar")).toBeVisible();
+  await noHorizontalScroll(page);
+
+  await page.goto(`/quan-tri/lop/${ids.classGroup}`);
+  await expect(page.getByRole("heading", { name: "Tổng quan & trạng thái" })).toBeVisible();
+  await page.getByText("Kết thúc lớp", { exact: true }).click();
+  await page.getByRole("button", { name: "Xác nhận: kết thúc lớp" }).click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(/còn \d+ buổi/i);
+
+  await page.goto("/quan-tri/thu-tien");
+  await expect(page.getByRole("heading", { name: "Sổ thu tiền" })).toBeVisible();
+  await noHorizontalScroll(page);
+});

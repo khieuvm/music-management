@@ -1,3 +1,4 @@
+import { csvResponse } from "@/lib/csv";
 import { getActor } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { teachingReport, teachingCsv } from "@/lib/services/reports";
@@ -15,11 +16,5 @@ export async function GET(request: Request) {
   const to = url.searchParams.get("den") ?? "";
   if (!isDateString(from) || !isDateString(to) || from > to) return new Response("Khoảng ngày không hợp lệ.", { status: 400 });
   const csv = teachingCsv(await teachingReport(getDb(), from, to));
-  return new Response(csv, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="gio-day-${from}-${to}.csv"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  return csvResponse(csv, `gio-day-${from}-${to}.csv`);
 }

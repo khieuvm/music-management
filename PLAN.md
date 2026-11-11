@@ -26,7 +26,7 @@ Các file Markdown mô tả yêu cầu, không lưu dữ liệu học viên th�
 
 ### Tiến độ hiện tại
 
-Bản MVP đã chạy được ở local (xem [README](README.md)): website marketing, đăng nhập và phân quyền 4 vai trò, thêm/sửa/ngừng hoạt động khóa, lớp, lịch, giáo viên, học sinh, tài khoản; ghi danh; điểm danh và nhận xét; đơn xin nghỉ; tiến độ và nhận xét từng học sinh; thông báo trong ứng dụng; chặn trùng giáo viên/phòng; bài tập video; học phí chia đợt; tổng hợp giờ dạy và lương tạm tính theo đơn giá quản lý nhập (CSV); nhật ký. Có cấu hình demo công khai trên Render. Có unit/integration test trên PostgreSQL thật và e2e desktop + mobile.
+Bản MVP đã chạy được ở local (xem [README](README.md)): website marketing, đăng nhập và phân quyền 4 vai trò, thêm/sửa/ngừng hoạt động khóa, lớp, lịch, giáo viên, học sinh, tài khoản; ghi danh; điểm danh và nhận xét; đơn xin nghỉ; tiến độ và nhận xét từng học sinh; thông báo trong ứng dụng; chặn trùng giáo viên/phòng; bài tập video; học phí chia đợt, công nợ có màu theo hạn, nhắc nợ trong ứng dụng, sổ thu và phiếu thu in được; tiến độ và vòng đời lớp, cảnh báo lớp cần xử lý; danh bạ phụ huynh; tổng hợp giờ dạy và lương tạm tính theo đơn giá quản lý nhập (CSV); nhật ký. Có cấu hình demo công khai trên Render. Có unit/integration test trên PostgreSQL thật và e2e desktop + mobile.
 
 Còn lại trước khi chạy thật: nhập đơn giá lương thật, gửi thông báo qua email/Zalo, khôi phục mật khẩu, MFA cho quản lý, triển khai VPS + backup (mục 8), nhập dữ liệu thật và nghiệm thu (mục 11).
 

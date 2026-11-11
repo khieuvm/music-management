@@ -32,7 +32,7 @@ export function Select({ label, name, hint, children, ...props }: Base & SelectH
   );
 }
 
-export function Badge({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "good" | "warn" | "bad" }) {
+export function Badge({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "good" | "warn" | "alert" | "bad" }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 

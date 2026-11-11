@@ -9,11 +9,13 @@ import type { Actor } from "../src/lib/access";
 import { login } from "../src/lib/services/auth";
 import { saveAttendance } from "../src/lib/services/attendance";
 import { createAssignment, getAccessibleFile } from "../src/lib/services/assignments";
-import { cancelLesson, enrollStudent, generateLessons } from "../src/lib/services/classes";
+import { cancelLesson, changeClassStatus, enrollStudent, generateLessons, saveClass } from "../src/lib/services/classes";
+import { classBoard, classProgress, syncClassStatuses } from "../src/lib/services/class-progress";
+import { updateStudent } from "../src/lib/services/people";
 import { acknowledgeAbsence, cancelAbsence, requestAbsence } from "../src/lib/services/absences";
 import { addStudentNote, deleteStudentNote, getStudentInClass } from "../src/lib/services/student-notes";
 import { markNotificationsRead, safeHref } from "../src/lib/services/notifications";
-import { recordPayment, voidPayment } from "../src/lib/services/fees";
+import { dueReport, feeLedger, recordPayment, sendFeeReminder, voidPayment } from "../src/lib/services/fees";
 import { createStaffAccount, createTeacherAccount } from "../src/lib/services/users";
 import { hashPassword } from "../src/lib/auth/password";
 import { createPayRate, deletePayRate } from "../src/lib/services/pay-rates";
@@ -374,5 +376,113 @@ describe("pay rates", () => {
     await deletePayRate(db, manager, own.id);
     expect((await report())[0].summary.payVnd).toBe(225_000);
     expect(await db.auditLog.count({ where: { entityType: "PayRate" } })).toBeGreaterThanOrEqual(3);
+  });
+});
+
+function dayKey(offset: number) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(Date.now() + offset * 86_400_000));
+}
+
+describe("fee due states", () => {
+  it("colour installments by due date, filter the collection list and rate-limit reminders", async () => {
+    const teacher = await teacherActor();
+    const group = await classFor(teacher.teacherId!);
+    const student = await studentActor();
+    const enrollment = await db.enrollment.create({ data: { studentId: student.studentId!, classId: group.id, tuitionVnd: 400 } });
+    await db.feeInstallment.createMany({
+      data: [-5, 0, 3, 20].map((offset, index) => ({
+        enrollmentId: enrollment.id, sequence: index + 1, amountVnd: 100, dueDate: new Date(`${dayKey(offset)}T00:00:00Z`),
+      })),
+    });
+    const [row] = await feeLedger(db, { classId: group.id });
+    expect(row.installments.map((item) => item.state)).toEqual(["OVERDUE", "DUE_TODAY", "DUE_SOON", "UPCOMING"]);
+    expect([row.worst, row.overdueVnd, row.dueTodayVnd, row.dueSoonVnd, row.outstandingVnd]).toEqual(["OVERDUE", 100, 100, 100, 400]);
+
+    const collect = await dueReport(db, { view: "can-thu", classId: group.id });
+    expect(collect.rows.map(({ item }) => item.state)).toEqual(["OVERDUE", "DUE_TODAY", "DUE_SOON"]);
+    expect(collect.summary.OVERDUE).toEqual({ amountVnd: 100, count: 1, students: 1 });
+    expect((await dueReport(db, { view: "qua-han", classId: group.id, q: "không-có-ai" })).rows).toHaveLength(0);
+
+    await recordPayment(db, staff, enrollment.id, { amountVnd: "100", method: "CASH", paidDate: dayKey(0), idempotencyKey: randomUUID() });
+    expect((await feeLedger(db, { classId: group.id }))[0].worst).toBe("DUE_TODAY");
+
+    const reminded = await sendFeeReminder(db, staff, enrollment.id);
+    expect(reminded.amountVnd).toBe(200);
+    const note = await db.notification.findFirstOrThrow({ where: { userId: student.userId } });
+    expect(note.href).toBe("/hoc-sinh/hoc-phi");
+    await expect(sendFeeReminder(db, staff, enrollment.id)).rejects.toMatchObject({ status: 409 });
+    await expect(sendFeeReminder(db, student, enrollment.id)).rejects.toMatchObject({ status: 403 });
+
+    const noAccount = await db.student.create({ data: { code: `HSX${counter}`, fullName: "Không tài khoản" } });
+    const other = await db.enrollment.create({ data: { studentId: noAccount.id, classId: group.id, tuitionVnd: 100 } });
+    await db.feeInstallment.create({ data: { enrollmentId: other.id, sequence: 1, amountVnd: 100, dueDate: new Date(`${dayKey(-1)}T00:00:00Z`) } });
+    await expect(sendFeeReminder(db, staff, other.id)).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe("class lifecycle", () => {
+  it("auto-starts planned classes, blocks finishing with unconfirmed lessons and requires a reason to cancel", async () => {
+    const teacher = await teacherActor();
+    const group = await classFor(teacher.teacherId!);
+    await db.classGroup.update({ where: { id: group.id }, data: { status: "PLANNED" } });
+    const student = await studentActor();
+    await enrollStudent(db, staff, group.id, { studentId: student.studentId, installmentCount: "1", firstDueDate: today });
+    const now = Date.now();
+    await db.enrollment.updateMany({ where: { classId: group.id }, data: { enrolledAt: new Date(now - 72 * HOUR) } });
+    const past = await db.lesson.create({ data: { classId: group.id, teacherId: teacher.teacherId!, startsAt: new Date(now - 30 * HOUR), endsAt: new Date(now - 29 * HOUR) } });
+    const future = await db.lesson.create({ data: { classId: group.id, teacherId: teacher.teacherId!, startsAt: new Date(now + 48 * HOUR), endsAt: new Date(now + 49 * HOUR) } });
+
+    expect(await syncClassStatuses(db)).toBeGreaterThanOrEqual(1);
+    expect((await db.classGroup.findUniqueOrThrow({ where: { id: group.id } })).status).toBe("ACTIVE");
+    expect(await db.auditLog.count({ where: { action: "class.auto_started", entityId: group.id } })).toBe(1);
+    await syncClassStatuses(db);
+    expect(await db.auditLog.count({ where: { action: "class.auto_started", entityId: group.id } })).toBe(1);
+
+    const progress = (await classProgress(db, [group.id])).get(group.id)!;
+    expect([progress.totalLessons, progress.completedLessons, progress.pendingAttendance, progress.upcomingLessons]).toEqual([2, 0, 1, 1]);
+    const [board] = await classBoard(db, { id: group.id });
+    expect(board.flags.map((flag) => flag.key)).toContain("attendance");
+
+    await expect(changeClassStatus(db, staff, group.id, { status: "PLANNED" })).rejects.toMatchObject({ status: 422 });
+    await expect(changeClassStatus(db, staff, group.id, { status: "FINISHED" })).rejects.toThrow(/chưa điểm danh/);
+    await saveAttendance(db, teacher, past.id, { topic: "Bài 1", entries: [{ studentId: student.studentId!, status: "PRESENT" }] });
+    await expect(changeClassStatus(db, staff, group.id, { status: "FINISHED" })).rejects.toThrow(/chưa học/);
+    await cancelLesson(db, staff, future.id, "Kết thúc sớm");
+    const [done] = await classBoard(db, { id: group.id });
+    expect(done.flags.map((flag) => flag.key)).toContain("finish");
+
+    await changeClassStatus(db, staff, group.id, { status: "FINISHED" });
+    expect((await db.enrollment.findFirstOrThrow({ where: { classId: group.id } })).status).toBe("COMPLETED");
+    expect(await db.notification.count({ where: { userId: student.userId, title: { contains: "đã kết thúc" } } })).toBe(1);
+    await changeClassStatus(db, staff, group.id, { status: "ACTIVE" });
+    expect((await db.enrollment.findFirstOrThrow({ where: { classId: group.id } })).status).toBe("ACTIVE");
+
+    const extra = await db.lesson.create({ data: { classId: group.id, teacherId: teacher.teacherId!, startsAt: new Date(now + 72 * HOUR), endsAt: new Date(now + 73 * HOUR) } });
+    await expect(changeClassStatus(db, staff, group.id, { status: "CANCELLED" })).rejects.toThrow(/lý do/);
+    await changeClassStatus(db, staff, group.id, { status: "CANCELLED", reason: "Không đủ học sinh" });
+    expect((await db.lesson.findUniqueOrThrow({ where: { id: extra.id } })).status).toBe("CANCELLED");
+  });
+
+  it("editing class details never changes its status", async () => {
+    const teacher = await teacherActor();
+    const group = await classFor(teacher.teacherId!);
+    await saveClass(db, staff, group.id, {
+      code: group.code, name: "Tên mới", courseId: group.courseId, teacherId: group.teacherId, deliveryMode: "OFFLINE", format: "GROUP",
+      capacity: "10", tuitionVnd: "1000000", location: "", meetingUrl: "", startDate: today, endDate: "", status: "CANCELLED",
+    });
+    const updated = await db.classGroup.findUniqueOrThrow({ where: { id: group.id } });
+    expect([updated.name, updated.status]).toEqual(["Tên mới", "ACTIVE"]);
+  });
+});
+
+describe("student status", () => {
+  it("cannot be set to stopped while the student is still in a class", async () => {
+    const teacher = await teacherActor();
+    const group = await classFor(teacher.teacherId!);
+    const student = await studentActor();
+    await enrollStudent(db, staff, group.id, { studentId: student.studentId, installmentCount: "1", firstDueDate: today });
+    const input = { fullName: "Học sinh A", parentName: "", parentPhone: "", parentEmail: "", note: "" };
+    await expect(updateStudent(db, staff, student.studentId!, { ...input, status: "STOPPED" })).rejects.toMatchObject({ status: 422 });
+    await updateStudent(db, staff, student.studentId!, { ...input, status: "PAUSED" });
   });
 });

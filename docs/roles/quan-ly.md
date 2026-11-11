@@ -49,6 +49,8 @@ Toàn bộ chức năng của giáo vụ, cộng thêm:
 
 **Đơn giá lương** (`/quan-tri/luong`, chỉ quản lý sửa): lương/giờ, phụ cấp buổi tối/giờ và giờ bắt đầu buổi tối, phụ cấp cuối tuần/giờ, phụ cấp mỗi buổi; đơn giá chung hoặc riêng từng giáo viên, có ngày áp dụng. Báo cáo giờ dạy tự tính tiền tạm tính.
 
+Quản lý thấy cùng các màn hình theo dõi lớp, công nợ có màu, sổ thu và phiếu thu như giáo vụ (xem [giáo vụ](giao-vu.md)).
+
 Chưa có: MFA, báo cáo tổng hợp chi tiết, chốt bảng lương theo tháng, thưởng/khấu trừ.
 
 ## Nghiệm thu riêng

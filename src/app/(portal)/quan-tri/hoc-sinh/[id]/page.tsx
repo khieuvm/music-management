@@ -53,7 +53,7 @@ export default async function StudentDetailPage({ params }: PageProps<"/quan-tri
         <h2>Lớp & học phí</h2>
         {!student.enrollments.length && <Empty>Chưa ghi danh lớp nào. Vào trang lớp để ghi danh.</Empty>}
         {student.enrollments.map((enrollment, index) => (
-          <article key={enrollment.id} className="sub-panel">
+          <article key={enrollment.id} id={`ghi-danh-${enrollment.id}`} className="sub-panel">
             <div className="row-between">
               <h3><Link href={`/quan-tri/lop/${enrollment.classGroup.id}`}>{enrollment.classGroup.name}</Link> <span className="muted">{enrollment.classGroup.code}</span></h3>
               <Badge tone={enrollment.status === "ACTIVE" ? "good" : "default"}>{enrollmentStatusLabels[enrollment.status]}</Badge>

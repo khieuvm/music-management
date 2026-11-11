@@ -186,6 +186,44 @@ async function seedDemoClassroom() {
   console.info(`Demo accounts (password "${DEMO_PASSWORD}"): quanly, giaovu, gv.lan, gv.minh, hs0001, hs0002.`);
 }
 
+/**
+ * Idempotent demo additions (also applied to an already-seeded demo database): a planned class without schedule and
+ * a student whose fees are due today / within a few days, so every due-state colour is visible.
+ */
+async function seedDemoExtras() {
+  const staff = await db.user.findUnique({ where: { username: "giaovu" } });
+  const chessClass = await db.classGroup.findUnique({ where: { code: "COVUA-DEMO-01" } });
+  const lan = await db.teacher.findFirst({ where: { fullName: "Cô Lan (demo)" } });
+  if (!staff || !chessClass || !lan) return;
+  const today = localKey(new Date());
+  if (!await db.classGroup.findUnique({ where: { code: "PIANO-DEMO-02" } })) {
+    const piano = await db.course.findUniqueOrThrow({ where: { slug: "piano-can-ban" } });
+    await db.classGroup.create({
+      data: {
+        code: "PIANO-DEMO-02", name: "Piano căn bản – khóa sau (chưa xếp lịch)", courseId: piano.id, teacherId: lan.id,
+        deliveryMode: "OFFLINE", format: "GROUP", capacity: 6, tuitionVnd: 6_000_000, location: "Phòng 1",
+        startDate: new Date(`${shiftDays(today, 14)}T00:00:00Z`), status: "PLANNED",
+      },
+    });
+  }
+  const fullName = "Phạm Dũng (demo)";
+  if (await db.student.findFirst({ where: { fullName } })) return;
+  const [row] = await db.$queryRaw<{ max: number | null }[]>`
+    SELECT MAX(CAST(SUBSTRING("code" FROM 3) AS INTEGER)) AS max FROM "Student" WHERE "code" ~ '^HS[0-9]+$'`;
+  const student = await db.student.create({
+    data: { code: `HS${String((row?.max ?? 0) + 1).padStart(4, "0")}`, fullName, parentName: "Anh Long", parentPhone: "0911111140" },
+  });
+  const enrollment = await db.enrollment.create({ data: { studentId: student.id, classId: chessClass.id, tuitionVnd: 3_000_000 } });
+  await db.feeInstallment.createMany({
+    data: [0, 3, 33].map((days, index) => ({
+      enrollmentId: enrollment.id, sequence: index + 1, amountVnd: 1_000_000, dueDate: new Date(`${shiftDays(today, days)}T00:00:00Z`),
+    })),
+  });
+  await db.payment.create({
+    data: { enrollmentId: enrollment.id, amountVnd: 400_000, method: "CASH", paidAt: new Date(), receivedById: staff.id, idempotencyKey: crypto.randomUUID(), note: "Đóng trước một phần" },
+  });
+}
+
 try {
   for (const { fee, ...data } of courses) {
     const course = await db.course.upsert({
@@ -218,6 +256,7 @@ try {
     update: {},
   });
   await seedDemoClassroom();
+  await seedDemoExtras();
   console.info("Demo data seeded. No real student or parent data was created.");
 } finally {
   await db.$disconnect();

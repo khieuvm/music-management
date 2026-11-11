@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { recordPaymentAction, replanInstallmentsAction, voidPaymentAction } from "@/app/actions/manage";
 import { ActionForm } from "@/components/action-form";
 import { Badge, Field, Select } from "@/components/fields";
-import { installmentStateLabels } from "@/lib/fees";
+import { installmentStateText, installmentStateTone } from "@/lib/fees";
 import { formatVnd } from "@/lib/format";
 import { paymentMethodLabels } from "@/lib/labels";
 import type { getEnrollmentFinance } from "@/lib/services/fees";
@@ -10,7 +11,6 @@ import { dateOnlyKey, formatDate, localDateKey } from "@/lib/time";
 type Finance = NonNullable<Awaited<ReturnType<typeof getEnrollmentFinance>>>;
 type Mode = "student" | "staff" | "admin";
 
-const stateTone = { PAID: "good", PARTIAL: "warn", OVERDUE: "bad", UPCOMING: "default" } as const;
 
 export function FinancePanel({ finance, mode }: { finance: Finance; mode: Mode }) {
   const { enrollment, paidVnd, outstandingVnd, installments } = finance;
@@ -27,12 +27,12 @@ export function FinancePanel({ finance, mode }: { finance: Finance; mode: Mode }
             <thead><tr><th>Đợt</th><th>Hạn</th><th>Số tiền</th><th>Còn thiếu</th><th>Tình trạng</th></tr></thead>
             <tbody>
               {installments.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className={`fee-row ${item.state.toLowerCase()}`}>
                   <td>{item.sequence}</td>
                   <td>{formatDate(item.dueDate, true)}</td>
                   <td>{formatVnd(item.amountVnd)}</td>
                   <td>{formatVnd(item.outstandingVnd)}</td>
-                  <td><Badge tone={stateTone[item.state]}>{installmentStateLabels[item.state]}</Badge></td>
+                  <td><Badge tone={installmentStateTone[item.state]}>{installmentStateText(item)}</Badge>{item.partial && <> <span className="muted">(đã trả một phần)</span></>}</td>
                 </tr>
               ))}
             </tbody>
@@ -48,7 +48,7 @@ export function FinancePanel({ finance, mode }: { finance: Finance; mode: Mode }
               <tbody>
                 {enrollment.payments.map((payment) => (
                   <tr key={payment.id} className={payment.voidedAt ? "voided" : undefined}>
-                    <td>#{payment.receiptNo}</td>
+                    <td>{mode === "student" ? `#${payment.receiptNo}` : <Link href={`/quan-tri/phieu-thu/${payment.id}`}>#{payment.receiptNo}</Link>}</td>
                     <td>{formatDate(payment.paidAt)}</td>
                     <td>{formatVnd(payment.amountVnd)}</td>
                     <td>{paymentMethodLabels[payment.method]}</td>

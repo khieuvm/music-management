@@ -4,10 +4,11 @@ import { redirect } from "next/navigation";
 import { formObject, requireActionActor, runAction } from "@/lib/action";
 import { getDb } from "@/lib/db";
 import { formatVnd } from "@/lib/format";
+import { classStatusLabels } from "@/lib/labels";
 import { saveCourse } from "@/lib/services/catalog";
-import { cancelLesson, enrollStudent, generateLessons, saveClass, updateLesson, withdrawEnrollment } from "@/lib/services/classes";
+import { cancelLesson, changeClassStatus, enrollStudent, generateLessons, saveClass, updateLesson, withdrawEnrollment } from "@/lib/services/classes";
 import { updateConsultation } from "@/lib/services/consultations-admin";
-import { recordPayment, replanInstallments, voidPayment } from "@/lib/services/fees";
+import { recordPayment, replanInstallments, sendFeeReminder, voidPayment } from "@/lib/services/fees";
 import { createPayRate, deletePayRate } from "@/lib/services/pay-rates";
 import { createStudent, createTeacher, updateStudent, updateTeacher } from "@/lib/services/people";
 import {
@@ -159,6 +160,15 @@ export async function updateLessonAction(formData: FormData) {
   });
 }
 
+export async function changeClassStatusAction(formData: FormData) {
+  return runAction(async () => {
+    const actor = await requireActionActor([...managers]);
+    const { classId = "", ...data } = formObject(formData);
+    const { classGroup, detail } = await changeClassStatus(getDb(), actor, classId, data);
+    return `Lớp chuyển sang “${classStatusLabels[classGroup.status]}”. ${detail}`.trim();
+  });
+}
+
 export async function cancelLessonAction(formData: FormData) {
   return runAction(async () => {
     const actor = await requireActionActor([...managers]);
@@ -185,6 +195,15 @@ export async function voidPaymentAction(formData: FormData) {
     const { paymentId = "", reason = "" } = formObject(formData);
     await voidPayment(getDb(), actor, paymentId, reason);
     return "Đã hủy phiếu thu; số còn phải thu được cập nhật.";
+  });
+}
+
+export async function sendFeeReminderAction(formData: FormData) {
+  return runAction(async () => {
+    const actor = await requireActionActor([...managers]);
+    const { enrollmentId = "" } = formObject(formData);
+    const { amountVnd } = await sendFeeReminder(getDb(), actor, enrollmentId);
+    return `Đã gửi nhắc ${formatVnd(amountVnd)} vào tài khoản học sinh/phụ huynh.`;
   });
 }
 

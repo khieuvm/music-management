@@ -284,3 +284,42 @@ legend { font-weight: 600; font-size: .9rem; }
 .demo-accounts { margin-top: 20px; border-left: 4px solid var(--accent, #c27c2c); }
 .demo-accounts h2 { font-size: 1.05rem; margin: 0 0 6px; }
 .demo-accounts ul { margin: 8px 0 0; padding-left: 18px; }
+
+/* Fee due-state colours: overdue = red, due today = orange, due soon = yellow, paid = green. */
+.badge.alert { background: #ffd2a8; color: #7a3a06; }
+.fee-row.overdue td { background: #fdecea; }
+.fee-row.due_today td { background: #fff0e0; }
+.fee-row.due_soon td { background: #fff9e6; }
+.fee-legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; font-size: .85rem; }
+.stat.tone-bad { border-left: 5px solid #c0392b; }
+.stat.tone-alert { border-left: 5px solid #e67e22; }
+.stat.tone-warn { border-left: 5px solid #e2b93b; }
+.stat.tone-good { border-left: 5px solid #6a994e; }
+.stat.is-active { outline: 2px solid var(--ink); }
+.meter { display: block; height: 6px; background: #eceee4; border-radius: 4px; overflow: hidden; margin-top: 4px; min-width: 80px; }
+.meter > span { display: block; height: 100%; background: #6a994e; }
+.flag-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.tel { white-space: nowrap; }
+.stat-grid.compact { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.stat-grid.compact .stat strong { font-size: 1.35rem; }
+details.status-change > summary { list-style: none; cursor: pointer; }
+details.status-change > summary::-webkit-details-marker { display: none; }
+details.status-change[open] { flex-basis: 100%; }
+details.status-change[open] > summary { margin-bottom: 10px; }
+.receipt { max-width: 720px; }
+.receipt-no { text-align: right; }
+.receipt-grid { display: grid; grid-template-columns: 150px 1fr; gap: 8px 16px; margin: 20px 0; }
+.receipt-grid dt { color: var(--muted); }
+.receipt-grid dd { margin: 0; }
+.receipt-amount { font-size: 1.3rem; }
+.receipt-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; text-align: center; margin-top: 30px; min-height: 110px; }
+.receipt-sign span { display: block; font-weight: 600; }
+.receipt-sign em { display: block; margin-top: 60px; color: var(--muted); font-size: .85rem; }
+@media print {
+  .portal-header, .portal-nav, .no-print, .skip-link, footer { display: none !important; }
+  .portal-main { width: 100%; padding: 0; }
+  .receipt { border: 0; max-width: none; }
+}
+@media (max-width: 520px) { .receipt-grid { grid-template-columns: 1fr; gap: 2px; } .receipt-grid dd { margin-bottom: 8px; } }
+.search-bar input[type="checkbox"] { flex: none; width: 18px; height: 18px; }
+.search-bar label { white-space: nowrap; }

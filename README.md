@@ -9,7 +9,7 @@ Bản MVP chạy được ở local và có thể dựng **bản demo công khai
 | Khu vực | Đường dẫn | Chức năng |
 |---|---|---|
 | Khách | `/`, `/khoa-hoc` | Giới thiệu, danh sách khóa theo nhóm **Năng khiếu** (nhạc: piano…) và **Kỹ năng** (cờ vua…), form tư vấn |
-| Quản lý / giáo vụ | `/quan-tri` | Thêm/sửa/xóa khóa, lớp, lịch buổi học, giáo viên, học sinh, ghi danh, tài khoản; xử lý tư vấn từ website; xem bài tập; theo dõi tiến độ và nhận xét từng học sinh; đơn xin nghỉ; chặn trùng giáo viên và trùng phòng; thu học phí theo đợt; tổng hợp giờ dạy và tiền lương tạm tính (xuất CSV); cài đặt đơn giá lương/phụ cấp (chỉ quản lý sửa); nhật ký thao tác (chỉ quản lý) |
+| Quản lý / giáo vụ | `/quan-tri` | Thêm/sửa/xóa khóa, lớp, lịch buổi học, giáo viên, học sinh, ghi danh, tài khoản; xử lý tư vấn từ website; xem bài tập; theo dõi tiến độ và nhận xét từng học sinh; đơn xin nghỉ; chặn trùng giáo viên và trùng phòng; thu học phí theo đợt, công nợ tô màu sắp đến hạn/đến hạn/quá hạn, gửi nhắc, sổ thu và in phiếu thu; tiến độ và vòng đời lớp (tự bắt đầu, kết thúc/hủy có kiểm tra), lớp cần xử lý; danh bạ học sinh–phụ huynh (CSV); tổng hợp giờ dạy và tiền lương tạm tính (xuất CSV); cài đặt đơn giá lương/phụ cấp (chỉ quản lý sửa); nhật ký thao tác (chỉ quản lý) |
 | Giáo viên | `/giao-vien` | Lịch dạy, điểm danh và nhận xét từng buổi (sửa trong 48 giờ), giao bài tập, xem video học sinh nộp, chấm điểm/nhận xét/yêu cầu nộp lại, xem đơn xin nghỉ, theo dõi tiến độ và viết nhận xét định kỳ cho từng học sinh, xem giờ dạy của mình |
 | Học sinh + phụ huynh | `/hoc-sinh` | Một tài khoản chung do trung tâm cấp: lịch học, gửi/rút đơn xin nghỉ, điểm danh và nhận xét, nộp video bài tập, xem kết quả chấm, học phí và các đợt đóng |
 
@@ -127,6 +127,6 @@ Giới hạn gói miễn phí: web ngủ sau khoảng 15 phút không ai truy c�
 
 1. Nhập đơn giá lương thật; nếu cần thêm thưởng/khấu trừ hoặc chốt bảng lương theo tháng thì bổ sung.
 2. Nội dung thật cho trang giới thiệu (nhạc = Năng khiếu, cờ vua = Kỹ năng đã chốt).
-3. Gửi thông báo qua email/Zalo, nhắc học phí, khôi phục mật khẩu.
+3. Gửi thông báo qua email/Zalo (nhắc học phí hiện chỉ trong ứng dụng), khôi phục mật khẩu.
 4. Giáo viên dạy thay theo buổi, báo cáo tiến độ định kỳ cho phụ huynh.
 5. Triển khai VPS, tên miền, backup, theo [kế hoạch](PLAN.md#8-tên-miền-và-backend-chạy-như-thế-nào).

@@ -1,10 +1,14 @@
 import { z } from "zod";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { assertManager, assertRole, isManager, type Actor } from "@/lib/access";
-import { allocatePayments, splitInstallments } from "@/lib/fees";
+import { toCsv } from "@/lib/csv";
+import { allocatePayments, installmentStateText, splitInstallments, worstState, type InstallmentState } from "@/lib/fees";
+import { formatVnd } from "@/lib/format";
+import { paymentMethodLabels } from "@/lib/labels";
 import { RequestError } from "@/lib/http";
 import { audit } from "@/lib/services/audit";
-import { localDateKey, localDateTime, startOfLocalDay } from "@/lib/time";
+import { notify } from "@/lib/services/notifications";
+import { addDays, dateOnlyKey, formatDate, localDateKey, localDateTime, todayDateOnly } from "@/lib/time";
 import { dateString, positiveInt, text, uuid, vnd } from "@/lib/validation";
 
 export async function getEnrollmentFinance(db: PrismaClient, enrollmentId: string) {
@@ -23,7 +27,7 @@ export async function getEnrollmentFinance(db: PrismaClient, enrollmentId: strin
     enrollment,
     paidVnd,
     outstandingVnd: enrollment.tuitionVnd - paidVnd,
-    installments: allocatePayments(enrollment.installments, paidVnd, startOfLocalDay()),
+    installments: allocatePayments(enrollment.installments, paidVnd, todayDateOnly()),
   };
 }
 
@@ -121,27 +125,188 @@ export async function replanInstallments(db: PrismaClient, actor: Actor, enrollm
   });
 }
 
-export async function listOutstanding(db: PrismaClient) {
+export type LedgerFilter = { classId?: string; studentIds?: string[]; includeInactive?: boolean };
+
+/**
+ * Fee position of every enrollment with tuition: installments with due-state colours, totals and the worst
+ * unpaid state. Withdrawn enrollments are kept only while they still owe money.
+ */
+export async function feeLedger(db: PrismaClient, filter: LedgerFilter = {}) {
   const enrollments = await db.enrollment.findMany({
-    where: { tuitionVnd: { gt: 0 } },
+    where: {
+      tuitionVnd: { gt: 0 },
+      ...(filter.classId ? { classId: filter.classId } : {}),
+      ...(filter.studentIds ? { studentId: { in: filter.studentIds } } : {}),
+    },
     include: {
       installments: true,
       payments: { where: { voidedAt: null }, select: { amountVnd: true } },
-      student: { select: { id: true, code: true, fullName: true, parentPhone: true } },
-      classGroup: { select: { code: true, name: true } },
+      student: { select: { id: true, code: true, fullName: true, parentName: true, parentPhone: true, userId: true, status: true } },
+      classGroup: { select: { id: true, code: true, name: true } },
     },
     orderBy: { enrolledAt: "desc" },
   });
-  const today = startOfLocalDay();
+  const today = todayDateOnly();
   return enrollments.map((enrollment) => {
     const paidVnd = enrollment.payments.reduce((sum, payment) => sum + payment.amountVnd, 0);
-    const allocated = allocatePayments(enrollment.installments, paidVnd, today);
+    const installments = allocatePayments(enrollment.installments, paidVnd, today);
+    const unpaid = installments.filter((item) => item.outstandingVnd > 0);
+    const sumState = (state: InstallmentState) => unpaid.filter((item) => item.state === state).reduce((sum, item) => sum + item.outstandingVnd, 0);
     return {
       enrollment,
+      installments,
       paidVnd,
-      outstandingVnd: enrollment.tuitionVnd - paidVnd,
-      overdueVnd: allocated.filter((item) => item.state === "OVERDUE").reduce((sum, item) => sum + item.outstandingVnd, 0),
-      nextDue: allocated.find((item) => item.outstandingVnd > 0)?.dueDate ?? null,
+      outstandingVnd: Math.max(enrollment.tuitionVnd - paidVnd, 0),
+      overdueVnd: sumState("OVERDUE"),
+      dueTodayVnd: sumState("DUE_TODAY"),
+      dueSoonVnd: sumState("DUE_SOON"),
+      worst: worstState(installments),
+      nextDue: unpaid.at(0) ?? null,
     };
-  }).filter((row) => row.outstandingVnd > 0);
+  }).filter((row) => filter.includeInactive || row.enrollment.status !== "WITHDRAWN" || row.outstandingVnd > 0);
+}
+
+export type LedgerRow = Awaited<ReturnType<typeof feeLedger>>[number];
+
+/** Unpaid installments, most urgent first, each with student/parent contact for collection. */
+export async function listDueInstallments(db: PrismaClient, filter: LedgerFilter = {}) {
+  const ledger = await feeLedger(db, filter);
+  return ledger.flatMap((row) => row.installments.filter((item) => item.outstandingVnd > 0).map((item) => ({ row, item })))
+    .sort((a, b) => a.item.dueDate.getTime() - b.item.dueDate.getTime() || a.row.enrollment.student.fullName.localeCompare(b.row.enrollment.student.fullName, "vi"));
+}
+
+export function summarizeDue(rows: { row: LedgerRow; item: { state: InstallmentState; outstandingVnd: number } }[]) {
+  const empty = () => ({ amountVnd: 0, students: new Set<string>(), count: 0 });
+  const groups = { OVERDUE: empty(), DUE_TODAY: empty(), DUE_SOON: empty(), UPCOMING: empty() };
+  for (const { row, item } of rows) {
+    if (item.state === "PAID") continue;
+    const group = groups[item.state];
+    group.amountVnd += item.outstandingVnd;
+    group.count += 1;
+    group.students.add(row.enrollment.studentId);
+  }
+  return Object.fromEntries(Object.entries(groups).map(([state, group]) => [state, { amountVnd: group.amountVnd, count: group.count, students: group.students.size }])) as
+    Record<keyof typeof groups, { amountVnd: number; count: number; students: number }>;
+}
+
+export const dueViews = {
+  "can-thu": { label: "Cần thu (quá hạn + 7 ngày tới)", states: ["OVERDUE", "DUE_TODAY", "DUE_SOON"] },
+  "qua-han": { label: "Quá hạn", states: ["OVERDUE"] },
+  "hom-nay": { label: "Đến hạn hôm nay", states: ["DUE_TODAY"] },
+  "sap-den": { label: "Sắp đến hạn", states: ["DUE_SOON"] },
+  "tat-ca": { label: "Tất cả khoản còn nợ", states: ["OVERDUE", "DUE_TODAY", "DUE_SOON", "UPCOMING"] },
+} as const satisfies Record<string, { label: string; states: InstallmentState[] }>;
+export type DueView = keyof typeof dueViews;
+
+export function parseDueView(value: string): DueView {
+  return value in dueViews ? value as DueView : "can-thu";
+}
+
+/** Shared by the outstanding page and its CSV export so both always show the same rows. */
+export async function dueReport(db: PrismaClient, options: { view: DueView; classId?: string; q?: string }) {
+  const classId = options.classId && /^[0-9a-f-]{36}$/i.test(options.classId) ? options.classId : undefined;
+  const all = await listDueInstallments(db, { classId });
+  const term = (options.q ?? "").trim().toLowerCase().slice(0, 100);
+  const searched = term ? all.filter(({ row }) => {
+    const student = row.enrollment.student;
+    return [student.fullName, student.code, student.parentName, student.parentPhone].some((value) => value.toLowerCase().includes(term));
+  }) : all;
+  const states: readonly InstallmentState[] = dueViews[options.view].states;
+  return { summary: summarizeDue(searched), rows: searched.filter(({ item }) => states.includes(item.state)) };
+}
+
+export function dueCsv(rows: Awaited<ReturnType<typeof dueReport>>["rows"]) {
+  return toCsv(
+    ["Mã HS", "Học sinh", "Phụ huynh", "SĐT phụ huynh", "Lớp", "Đợt", "Hạn đóng", "Số tiền đợt", "Còn thiếu", "Tình trạng"],
+    rows.map(({ row, item }) => [
+      row.enrollment.student.code, row.enrollment.student.fullName, row.enrollment.student.parentName, row.enrollment.student.parentPhone,
+      row.enrollment.classGroup.code, `${item.sequence}/${row.installments.length}`, dateOnlyKey(item.dueDate), item.amountVnd, item.outstandingVnd,
+      installmentStateText(item),
+    ]),
+  );
+}
+
+/** Minimum gap between two reminders for the same enrollment so parents are not spammed. */
+export const REMINDER_COOLDOWN_HOURS = 20;
+
+/** Sends an in-app fee reminder to the student/parent account for the unpaid amount that is due or due soon. */
+export async function sendFeeReminder(db: PrismaClient, actor: Actor, enrollmentId: string) {
+  assertManager(actor);
+  const [row] = await feeLedger(db, { includeInactive: true, ...(await enrollmentScope(db, enrollmentId)) });
+  if (!row) throw new RequestError(404, "Không tìm thấy ghi danh.");
+  const due = row.installments.filter((item) => item.outstandingVnd > 0 && item.state !== "UPCOMING");
+  if (!due.length) throw new RequestError(422, "Chưa có khoản nào đến hạn hoặc sắp đến hạn để nhắc.");
+  const userId = row.enrollment.student.userId;
+  if (!userId) throw new RequestError(422, "Học sinh chưa có tài khoản để nhận nhắc nhở. Hãy liên hệ phụ huynh qua điện thoại.");
+  const since = new Date(Date.now() - REMINDER_COOLDOWN_HOURS * 3_600_000);
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`fee-reminder:${enrollmentId}`}))`;
+    const recent = await tx.auditLog.findFirst({
+      where: { action: "fee.reminded", entityType: "Enrollment", entityId: enrollmentId, createdAt: { gte: since } },
+    });
+    if (recent) throw new RequestError(409, `Vừa gửi nhắc cho khoản này trong ${REMINDER_COOLDOWN_HOURS} giờ qua, hãy thử lại sau.`);
+    const amountVnd = due.reduce((sum, item) => sum + item.outstandingVnd, 0);
+    const first = due[0];
+    const when = first.state === "OVERDUE" ? `đã quá hạn ${-first.daysUntilDue} ngày`
+      : first.state === "DUE_TODAY" ? "đến hạn hôm nay" : `đến hạn ngày ${formatDate(first.dueDate, true)}`;
+    await notify(tx, [userId], {
+      title: `Nhắc đóng học phí lớp ${row.enrollment.classGroup.name}`,
+      body: `Khoản ${formatVnd(amountVnd)} ${when}. Vui lòng liên hệ giáo vụ nếu đã chuyển khoản.`,
+      href: "/hoc-sinh/hoc-phi",
+    });
+    await audit(tx, actor, "fee.reminded", "Enrollment", enrollmentId, { amountVnd, state: first.state });
+    return { amountVnd };
+  });
+}
+
+/** Time of the latest reminder per enrollment. */
+export async function lastReminders(db: PrismaClient, enrollmentIds: string[]) {
+  if (!enrollmentIds.length) return new Map<string, Date>();
+  const rows = await db.auditLog.groupBy({
+    by: ["entityId"], where: { action: "fee.reminded", entityType: "Enrollment", entityId: { in: enrollmentIds } }, _max: { createdAt: true },
+  });
+  return new Map(rows.filter((row) => row._max.createdAt).map((row) => [row.entityId, row._max.createdAt as Date]));
+}
+
+async function enrollmentScope(db: PrismaClient, enrollmentId: string) {
+  const enrollment = await db.enrollment.findUnique({ where: { id: enrollmentId }, select: { classId: true, studentId: true } });
+  if (!enrollment) throw new RequestError(404, "Không tìm thấy ghi danh.");
+  return { classId: enrollment.classId, studentIds: [enrollment.studentId] };
+}
+
+/** Payments received in a local date range (inclusive), newest first, with totals that exclude voided receipts. */
+export async function paymentLedger(db: PrismaClient, options: { from: string; to: string; method?: string }) {
+  const method = options.method === "CASH" || options.method === "TRANSFER" ? options.method : undefined;
+  const payments = await db.payment.findMany({
+    where: {
+      paidAt: { gte: localDateTime(options.from, "00:00"), lt: localDateTime(addDays(options.to, 1), "00:00") },
+      ...(method ? { method } : {}),
+    },
+    include: {
+      receivedBy: { select: { displayName: true } },
+      enrollment: { select: { student: { select: { id: true, code: true, fullName: true } }, classGroup: { select: { code: true } } } },
+    },
+    orderBy: [{ paidAt: "desc" }, { receiptNo: "desc" }],
+    take: 2000,
+  });
+  const valid = payments.filter((payment) => !payment.voidedAt);
+  const sum = (items: typeof payments) => items.reduce((total, payment) => total + payment.amountVnd, 0);
+  return {
+    payments,
+    totals: {
+      all: sum(valid), cash: sum(valid.filter((payment) => payment.method === "CASH")),
+      transfer: sum(valid.filter((payment) => payment.method === "TRANSFER")), count: valid.length, voided: payments.length - valid.length,
+    },
+  };
+}
+
+export function paymentLedgerCsv(ledger: Awaited<ReturnType<typeof paymentLedger>>) {
+  return toCsv(
+    ["Số phiếu", "Ngày thu", "Mã HS", "Học sinh", "Lớp", "Số tiền", "Hình thức", "Người thu", "Ghi chú", "Đã hủy", "Lý do hủy"],
+    ledger.payments.map((payment) => [
+      payment.receiptNo, localDateKey(payment.paidAt), payment.enrollment.student.code, payment.enrollment.student.fullName,
+      payment.enrollment.classGroup.code, payment.amountVnd, paymentMethodLabels[payment.method],
+      payment.receivedBy.displayName, payment.note, payment.voidedAt ? "Có" : "", payment.voidReason,
+    ]),
+  );
 }

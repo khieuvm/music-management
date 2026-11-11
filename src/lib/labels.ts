@@ -9,8 +9,9 @@ export const paymentMethodLabels = { CASH: "Tiền mặt", TRANSFER: "Chuyển k
 export const consultationStatusLabels = { NEW: "Mới", CONTACTING: "Đang liên hệ", ENROLLED: "Đã ghi danh", CLOSED: "Đã đóng" } as const;
 export const publicationLabels = { DRAFT: "Bản nháp", PUBLISHED: "Đang hiển thị", ARCHIVED: "Lưu trữ" } as const;
 
-export type Tone = "default" | "good" | "warn" | "bad";
+export type Tone = "default" | "good" | "warn" | "alert" | "bad";
 
+export const classStatusTone: Record<keyof typeof classStatusLabels, Tone> = { PLANNED: "warn", ACTIVE: "good", FINISHED: "default", CANCELLED: "bad" };
 export const lessonTone: Record<keyof typeof lessonStatusLabels, Tone> = { SCHEDULED: "warn", COMPLETED: "good", CANCELLED: "bad" };
 export const attendanceTone: Record<keyof typeof attendanceLabels, Tone> = { PRESENT: "good", LATE: "warn", EXCUSED: "default", ABSENT: "bad" };
 export const submissionTone: Record<keyof typeof submissionStatusLabels, Tone> = { SUBMITTED: "warn", NEEDS_REVISION: "bad", REVIEWED: "good" };

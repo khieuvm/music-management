@@ -31,12 +31,17 @@ Vận hành hồ sơ, tuyển sinh, lớp học, lịch học và học phí th�
 
 ## Đã triển khai (`/quan-tri`, dùng chung với quản lý)
 
-1. Tổng quan: lịch hôm nay, đơn xin nghỉ 7 ngày tới, số học sinh/lớp, buổi chưa điểm danh, yêu cầu tư vấn mới (xử lý tại mục Tư vấn).
-2. Học sinh (kèm phụ huynh), giáo viên, tài khoản: thêm, sửa, ngừng hoạt động.
+1. Tổng quan: lịch hôm nay, đơn xin nghỉ 7 ngày tới, số học sinh/lớp, buổi chưa điểm danh, yêu cầu tư vấn mới; **học phí quá hạn / đến hạn hôm nay / sắp đến hạn** (số tiền, số học sinh) và **lớp cần xử lý**.
+2. Học sinh & phụ huynh: danh bạ có tên/SĐT (bấm gọi)/email phụ huynh, lớp đang học, tình trạng học phí có màu; lọc theo trạng thái, lớp, tình trạng nợ; xuất CSV danh bạ. Không chuyển học sinh sang “Đã nghỉ” khi còn đang học lớp (rút lớp trước hoặc chọn “Bảo lưu”). Giáo viên, tài khoản: thêm, sửa, ngừng hoạt động.
 3. Khóa học (nhóm Năng khiếu/Kỹ năng, xuất bản lên website), lớp, ghi danh/rút, sĩ số.
+   - **Danh sách lớp**: thanh tiến độ (buổi đã dạy / tổng buổi), buổi kế tiếp, sĩ số; lọc theo trạng thái, giáo viên, từ khóa, “chỉ lớp cần xử lý”. Cờ cảnh báo: buổi chưa điểm danh, học phí quá hạn, đã học hết lịch (nên kết thúc), chưa có lịch, chưa có học sinh.
+   - **Trạng thái lớp**: Sắp mở → Đang học (tự động khi buổi đầu bắt đầu) → Đã kết thúc; hoặc Hủy (bắt buộc lý do, hủy các buổi sắp tới). Chỉ kết thúc được khi mọi buổi đã qua đều đã điểm danh và không còn buổi sắp tới; học sinh đang học được đánh dấu Hoàn thành, học sinh và giáo viên nhận thông báo. Có thể mở lại lớp đã kết thúc hoặc khôi phục lớp đã hủy. Form sửa thông tin lớp không đổi trạng thái.
+   - **Chi tiết lớp**: tổng quan tiến độ, chuyên cần, đã thu/còn nợ của lớp; danh sách học sinh kèm phụ huynh, tỷ lệ chuyên cần và tình trạng học phí có màu; buổi đã qua chưa điểm danh được tô đỏ.
 4. Lịch: tạo buổi lặp theo tuần, đổi/hủy buổi; chặn trùng lịch giáo viên và trùng phòng (lớp offline cùng địa điểm). Đổi/hủy buổi tự thông báo cho học sinh và giáo viên. Sửa điểm danh quá hạn có lý do.
 5. Bài tập và video học sinh nộp của mọi lớp; trang tiến độ & nhận xét từng học sinh; hồ sơ học sinh hiện mọi nhận xét (nội bộ và chia sẻ).
 6. Học phí: tổng khóa chia đợt, ghi nhận thu từng phần (không trùng khi bấm lặp, không thu vượt nợ).
+   - **Công nợ** (`/quan-tri/hoc-phi`): mỗi dòng là một đợt còn thiếu, tô màu đỏ = quá hạn (kèm số ngày), cam = đến hạn hôm nay, vàng = sắp đến hạn trong 7 ngày, xám = chưa đến hạn. Lọc theo nhóm, lớp, tên/SĐT; xuất CSV; nút Thu tiền mở thẳng hồ sơ học sinh; nút **Gửi nhắc** gửi thông báo vào tài khoản học sinh/phụ huynh (tối đa 1 lần/20 giờ cho mỗi ghi danh, có nhật ký).
+   - **Sổ thu** (`/quan-tri/thu-tien`): phiếu thu theo khoảng ngày, tổng tiền mặt/chuyển khoản, xuất CSV; **in phiếu thu** từng khoản.
 7. **Giờ dạy & lương tạm tính**: tổng hợp theo giáo viên và tháng, tách thường/tối/cuối tuần, tính tiền theo đơn giá quản lý đã nhập (giáo vụ xem được, không sửa đơn giá), xuất CSV chi tiết từng buổi.
 
 Chưa có: nhập CSV học sinh, gửi thông báo qua email/Zalo.

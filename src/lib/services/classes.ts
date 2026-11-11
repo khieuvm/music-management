@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { assertManager, type Actor } from "@/lib/access";
+import { classTransitions } from "@/lib/class-status";
 import { splitInstallments } from "@/lib/fees";
 import { RequestError } from "@/lib/http";
+import { classStatusLabels } from "@/lib/labels";
 import { generateOccurrences, type WeeklyPattern } from "@/lib/schedule";
 import { audit } from "@/lib/services/audit";
 import { classStudentUserIds, notify, teacherUserId } from "@/lib/services/notifications";
@@ -96,6 +98,7 @@ export async function saveClass(db: PrismaClient, actor: Actor, classId: string 
       throw new RequestError(422, "Khóa học không tồn tại.");
     }
     if (!classId) {
+      if (input.status !== "PLANNED" && input.status !== "ACTIVE") throw new RequestError(422, "Lớp mới chỉ có thể ở trạng thái Sắp mở hoặc Đang học.");
       await activeTeacher(tx, input.teacherId);
       const created = await tx.classGroup.create({ data });
       await audit(tx, actor, "class.created", "ClassGroup", created.id, { code: created.code });
@@ -105,12 +108,12 @@ export async function saveClass(db: PrismaClient, actor: Actor, classId: string 
     const current = await tx.classGroup.findUnique({ where: { id: classId } });
     if (!current) throw new RequestError(404, "Không tìm thấy lớp.");
     const activeCount = await tx.enrollment.count({ where: { classId, status: "ACTIVE" } });
-    if (input.capacity < activeCount && !["FINISHED", "CANCELLED"].includes(input.status)) {
+    if (input.capacity < activeCount && !["FINISHED", "CANCELLED"].includes(current.status)) {
       throw new RequestError(422, `Lớp đang có ${activeCount} học sinh; sĩ số tối đa không thể nhỏ hơn.`);
     }
     const roomChanged = current.location.trim().toLowerCase() !== input.location.trim().toLowerCase()
       || current.deliveryMode !== input.deliveryMode;
-    if (roomChanged && input.status !== "CANCELLED") {
+    if (roomChanged && current.status !== "CANCELLED") {
       const future = await tx.lesson.findMany({
         where: { classId, status: "SCHEDULED", startsAt: { gt: new Date() } }, select: { startsAt: true, endsAt: true },
       });
@@ -128,19 +131,65 @@ export async function saveClass(db: PrismaClient, actor: Actor, classId: string 
         where: { id: { in: future.map((lesson) => lesson.id) } }, data: { teacherId: input.teacherId },
       })).count;
     }
-    if (input.status === "CANCELLED" && current.status !== "CANCELLED") {
-      await tx.lesson.updateMany({
-        where: { classId, status: "SCHEDULED", startsAt: { gt: new Date() } },
-        data: { status: "CANCELLED", cancelReason: "Lớp đã hủy" },
-      });
-    }
-    if (input.status === "FINISHED") {
-      await tx.enrollment.updateMany({ where: { classId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
-    }
-    const updated = await tx.classGroup.update({ where: { id: classId }, data });
-    await audit(tx, actor, "class.updated", "ClassGroup", classId, { status: input.status, movedLessons });
+    // Status is changed only through changeClassStatus so its checks and side effects always run.
+    const updated = await tx.classGroup.update({ where: { id: classId }, data: { ...data, status: current.status } });
+    await audit(tx, actor, "class.updated", "ClassGroup", classId, { movedLessons });
     return updated;
   });
+}
+
+export const classStatusSchema = z.object({
+  status: z.enum(["PLANNED", "ACTIVE", "FINISHED", "CANCELLED"], "Trạng thái không hợp lệ."),
+  reason: text(300, "Lý do"),
+});
+
+/** Validated class lifecycle change with its side effects (lessons, enrollments, notifications). */
+export async function changeClassStatus(db: PrismaClient, actor: Actor, classId: string, raw: unknown) {
+  assertManager(actor);
+  const input = classStatusSchema.parse(raw);
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "ClassGroup" WHERE id = ${classId}::uuid FOR UPDATE`;
+    const current = await tx.classGroup.findUnique({ where: { id: classId } });
+    if (!current) throw new RequestError(404, "Không tìm thấy lớp.");
+    if (!classTransitions[current.status].includes(input.status)) {
+      throw new RequestError(422, `Không thể chuyển lớp từ “${classStatusLabels[current.status]}” sang “${classStatusLabels[input.status]}”.`);
+    }
+    const now = new Date();
+    let detail = "";
+    if (input.status === "FINISHED") {
+      const pending = await tx.lesson.count({ where: { classId, status: "SCHEDULED", endsAt: { lt: now } } });
+      if (pending) throw new RequestError(422, `Còn ${pending} buổi đã qua chưa điểm danh. Hãy điểm danh hoặc hủy các buổi đó trước khi kết thúc lớp.`);
+      const upcoming = await tx.lesson.count({ where: { classId, status: "SCHEDULED", startsAt: { gte: now } } });
+      if (upcoming) throw new RequestError(422, `Lớp còn ${upcoming} buổi chưa học. Hãy hủy các buổi còn lại nếu muốn kết thúc sớm.`);
+      const { count } = await tx.enrollment.updateMany({ where: { classId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
+      detail = `${count} học sinh được đánh dấu hoàn thành.`;
+    }
+    if (input.status === "CANCELLED") {
+      if (!input.reason) throw new RequestError(422, "Nhập lý do hủy lớp.");
+      const { count } = await tx.lesson.updateMany({
+        where: { classId, status: "SCHEDULED", startsAt: { gt: now } }, data: { status: "CANCELLED", cancelReason: `Lớp đã hủy: ${input.reason}`.slice(0, 300) },
+      });
+      detail = `Đã hủy ${count} buổi sắp tới. Nếu cần hoàn/giảm học phí, hãy điều chỉnh ở hồ sơ từng học sinh.`;
+    }
+    if (current.status === "FINISHED" && input.status === "ACTIVE") {
+      const { count } = await tx.enrollment.updateMany({ where: { classId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
+      detail = `${count} học sinh được đưa lại về trạng thái đang học.`;
+    }
+    const updated = await tx.classGroup.update({ where: { id: classId }, data: { status: input.status } });
+    if (input.status === "FINISHED" || input.status === "CANCELLED") {
+      const title = input.status === "FINISHED" ? `Lớp ${current.name} đã kết thúc` : `Lớp ${current.name} đã bị hủy`;
+      await notify(tx, [...await classStudentUserIds(tx, classId), ...await completedStudentUserIds(tx, classId), await teacherUserId(tx, current.teacherId)], {
+        title, body: input.reason, href: "",
+      }, actor.userId);
+    }
+    await audit(tx, actor, "class.status_changed", "ClassGroup", classId, { from: current.status, to: input.status, reason: input.reason });
+    return { classGroup: updated, detail };
+  });
+}
+
+async function completedStudentUserIds(tx: Prisma.TransactionClient, classId: string) {
+  const rows = await tx.enrollment.findMany({ where: { classId, status: "COMPLETED" }, select: { student: { select: { userId: true } } } });
+  return rows.map((row) => row.student.userId);
 }
 
 export const enrollSchema = z.object({

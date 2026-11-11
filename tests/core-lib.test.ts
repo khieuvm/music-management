@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateTemporaryPassword, hashPassword, verifyPassword } from "../src/lib/auth/password";
-import { allocatePayments, splitInstallments } from "../src/lib/fees";
+import { allocatePayments, installmentStateText, splitInstallments, worstState } from "../src/lib/fees";
 import { classifyTeaching, lessonPay, resolveRate, summarizeTeaching, type Rate } from "../src/lib/payroll";
 import { generateOccurrences, overlaps } from "../src/lib/schedule";
 import { addMonths, isDateString, localDateKey, localDateTime } from "../src/lib/time";
@@ -93,7 +93,25 @@ describe("tuition installments", () => {
     expect(states.map((item) => [item.state, item.outstandingVnd])).toEqual([
       ["PAID", 0], ["OVERDUE", 500_000], ["UPCOMING", 1_000_000],
     ]);
-    expect(allocatePayments(plan, 1_500_000, new Date("2026-01-01T00:00:00Z"))[1].state).toBe("PARTIAL");
+    const early = allocatePayments(plan, 1_500_000, new Date("2026-01-01T00:00:00Z"))[1];
+    expect([early.state, early.partial]).toEqual(["UPCOMING", true]);
+  });
+
+  it("colours unpaid installments by days until due", () => {
+    const plan = [
+      { dueDate: new Date("2026-03-01T00:00:00Z"), amountVnd: 100 },
+      { dueDate: new Date("2026-03-10T00:00:00Z"), amountVnd: 100 },
+      { dueDate: new Date("2026-03-17T00:00:00Z"), amountVnd: 100 },
+      { dueDate: new Date("2026-03-18T00:00:00Z"), amountVnd: 100 },
+    ];
+    const items = allocatePayments(plan, 0, new Date("2026-03-10T00:00:00Z"));
+    expect(items.map((item) => [item.state, item.daysUntilDue])).toEqual([
+      ["OVERDUE", -9], ["DUE_TODAY", 0], ["DUE_SOON", 7], ["UPCOMING", 8],
+    ]);
+    expect(installmentStateText(items[0])).toBe("Quá hạn 9 ngày");
+    expect(installmentStateText(items[2])).toBe("Còn 7 ngày");
+    expect(worstState(items)).toBe("OVERDUE");
+    expect(worstState(allocatePayments(plan, 400, new Date("2026-03-10T00:00:00Z")))).toBe("PAID");
   });
 });
 

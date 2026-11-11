@@ -34,6 +34,7 @@ function linksFor(actor: Actor) {
     { href: "/quan-tri/khoa-hoc", label: "Khóa học" },
     { href: "/quan-tri/lop", label: "Lớp & lịch" },
     { href: "/quan-tri/hoc-phi", label: "Công nợ" },
+    { href: "/quan-tri/thu-tien", label: "Sổ thu" },
     { href: "/quan-tri/gio-day", label: "Giờ dạy" },
     { href: "/quan-tri/luong", label: "Đơn giá lương" },
     ...(actor.role === "ADMIN"

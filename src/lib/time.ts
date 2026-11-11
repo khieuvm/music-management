@@ -81,6 +81,11 @@ export function formatDate(date: Date, dateOnlyValue = false) {
   }).format(date);
 }
 
+/** Today's local calendar date encoded like a DATE column (UTC midnight). */
+export function todayDateOnly() {
+  return dateOnly(localDateKey(new Date()));
+}
+
 /** Start of the given local day (or today) as an instant. */
 export function startOfLocalDay(date = localDateKey(new Date())) {
   return localDateTime(date, "00:00");

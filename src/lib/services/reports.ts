@@ -1,3 +1,4 @@
+import { toCsv } from "@/lib/csv";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { priceLesson, summarizeTeaching } from "@/lib/payroll";
 import { addDays, localDateTime, startOfLocalDay } from "@/lib/time";
@@ -37,12 +38,7 @@ export function teachingCsv(report: Awaited<ReturnType<typeof teachingReport>>) 
     return [group.teacher.fullName, lesson.classGroup.code, lesson.startsAt.toISOString(), lesson.endsAt.toISOString(),
       item.minutes, item.eveningMinutes, item.weekendMinutes, lesson._count.attendance, item.payVnd ?? "Chưa có đơn giá"];
   }));
-  const escape = (value: unknown) => {
-    let cell = String(value);
-    if (/^[=+\-@\t\r]/.test(cell)) cell = `'${cell}`;
-    return `"${cell.replaceAll('"', '""')}"`;
-  };
-  return "\uFEFF" + [header, ...rows].map((row) => row.map(escape).join(",")).join("\r\n");
+  return toCsv(header, rows);
 }
 
 export async function managerDashboard(db: PrismaClient) {

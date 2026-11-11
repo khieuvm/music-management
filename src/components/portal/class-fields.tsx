@@ -34,9 +34,14 @@ export function ClassFields({ value, courses, teachers }: { value?: ClassValues;
       <Field label="Link học online (https)" name="meetingUrl" type="url" maxLength={500} defaultValue={value?.meetingUrl} />
       <Field label="Ngày bắt đầu" name="startDate" type="date" required defaultValue={value ? dateOnlyKey(value.startDate) : ""} />
       <Field label="Ngày kết thúc" name="endDate" type="date" defaultValue={value?.endDate ? dateOnlyKey(value.endDate) : ""} />
-      <Select label="Trạng thái" name="status" defaultValue={value?.status ?? "PLANNED"}>
-        {Object.entries(classStatusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </Select>
+      {value
+        ? <p className="muted">Trạng thái: <strong>{classStatusLabels[value.status as keyof typeof classStatusLabels]}</strong> — đổi ở mục “Trạng thái lớp”.</p>
+        : (
+          <Select label="Trạng thái" name="status" defaultValue="PLANNED">
+            <option value="PLANNED">{classStatusLabels.PLANNED}</option>
+            <option value="ACTIVE">{classStatusLabels.ACTIVE}</option>
+          </Select>
+        )}
     </div>
   );
 }
